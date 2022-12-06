@@ -116,7 +116,7 @@ async def main():
         # 2. We become responsible for starting the bot.
 
         exts = ['','']
-        async with CustomBot(commands.when_mentioned, db_pool=pool, web_client=our_client, initial_extensions=exts) as bot:
+        async with CustomBot(commands.when_mentioned, db_pool=pool, web_client=our_client, testing_guild_id=417512514771746817, initial_extensions=exts) as bot:
 
             await bot.start(os.getenv(config['Discord']['botToken'], ''))
 
