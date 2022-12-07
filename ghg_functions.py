@@ -85,7 +85,7 @@ def rconConnect():
     rcon.authorize()
     return rcon
 
-async def update(self,ctx):
+async def update(interaction):
     subprocess.run("taskkill /f /im arma3server_x64.exe")
     keyPath = "S:\GHG_A3\A3Files\A3Keys.bat"
     modPath = "S:\GHG_A3\A3Files\A3ModsUpdate.bat"
@@ -99,8 +99,8 @@ async def update(self,ctx):
     waitUntil(modSuccess + mainSuccess == 0, subprocess.call(keyPath, shell=True),os.startfile (r"E:\Desktop\GHG_Training.lnk"))
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
-    serverControlLogChannel = self.bot.get_channel(891142089449029683)
-    await serverControlLogChannel.send("Server Updated and restarted to Training Configuration by {} at {}".format(ctx.author.name,dt_string))
+    serverControlLogChannel = interaction.guild.get_channel(891142089449029683)
+    await serverControlLogChannel.send("Server Updated and restarted to Training Configuration by {} at {}".format(interaction.user,dt_string))
     #a3UpdateIP = False
 
 def waitUntil(condition, output, output2):
@@ -112,12 +112,12 @@ def waitUntil(condition, output, output2):
             wU = False
         time.sleep(5)
 
-async def fnc_updateDatabaseRoles(self,member=None,isAll="no"):
-    guild = self.bot.get_guild(176386774124331008)
+async def fnc_updateDatabaseRoles(interaction,member=None,isAll="no"):
+    guild = interaction.guild
     loaChannelID = 891141241113301002
-    loaChannel = self.bot.get_channel(loaChannelID)
+    loaChannel = guild.get_channel(loaChannelID)
     activityCheckChannelID = 891141579895607336
-    activityCheckChannel = self.bot.get_channel(activityCheckChannelID)
+    activityCheckChannel = guild.get_channel(activityCheckChannelID)
     role_id = 891142215848570891
     loaRole = get(guild.roles, id=role_id)
     degenerateRole_ID = 925569335328657479
@@ -216,7 +216,7 @@ async def fnc_updateDatabaseRoles(self,member=None,isAll="no"):
                 degenerateUpdate = 'UPDATE users SET isDegenerate = "0" WHERE discordID = {}'.format(member.id)
                 mycursor.execute(degenerateUpdate)
                 mydb.commit()
-            tsInfoMsg = fnc_updateTSDB(self,member,mydb)
+            tsInfoMsg = fnc_updateTSDB(interaction,member,mydb)
             if isAll == "yes":
                 noTeamspeakIDList = noTeamspeakIDList + tsInfoMsg            
             
@@ -247,7 +247,7 @@ async def fnc_updateDatabaseRoles(self,member=None,isAll="no"):
     if isAll == "yes":
         await activityCheckChannel.send("Database Update for: {}\n\n{}\n\n{}".format(dt_string,unregisteredList,noTeamspeakIDList))
 
-def fnc_updateTSDB(self,member,mydb):
+def fnc_updateTSDB(interaction,member,mydb):
     mycursor = mydb.cursor()
     getRolesSQL = "Select teamspeakUID,isAdmin,isOfficer,isJuniorOfficer,isZeus,isActive,isDegenerate,discordName FROM users WHERE discordID = {}".format(member.id)
     mycursor.execute(getRolesSQL)
