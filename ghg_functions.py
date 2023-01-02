@@ -73,10 +73,10 @@ def gitRepo():
     
 def mydbConnect():
     mydb = mysql.connector.connect(
-    host="localhost",
-    user="webServer",
-    password="w3bS3rv3r#",
-    database="ghg_a3"
+    host=config['Database']['host'],
+    user=config['Database']['user'],
+    password=config['Database']['pass'],
+    database=config['Database']['database']
     )
     return mydb
 
@@ -99,7 +99,7 @@ async def update(interaction):
     waitUntil(modSuccess + mainSuccess == 0, subprocess.call(keyPath, shell=True),os.startfile (r"E:\Desktop\GHG_Training.lnk"))
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
-    serverControlLogChannel = interaction.guild.get_channel(891142089449029683)
+    serverControlLogChannel = interaction.guild.get_channel(int(config['Discord']['ghgLogChannelID']))
     await serverControlLogChannel.send("Server Updated and restarted to Training Configuration by {} at {}".format(interaction.user,dt_string))
     #a3UpdateIP = False
 
