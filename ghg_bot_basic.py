@@ -88,8 +88,21 @@ async def on_error(interaction, error):
     print(error)
     logger.error("An error occured: {}".format(error))
 
-
-
+@bot.event
+async def on_member_join(member):
+    mydb = mydbConnect()
+    discordID = member.id
+    discordName = member.name
+    mycursor = mydb.cursor()
+    registerGETSQL = "Select discordID FROM users WHERE discordID = '{}'".format(member.id)
+    mycursor.execute(registerGETSQL)
+    dbID = mycursor.fetchone()
+    if dbID == None:
+        sql = "INSERT INTO `ghg_a3`.`users`(`discordID`,`discordName`)VALUES('{}','{}');".format(discordID,discordName)
+        mycursor.execute(sql)
+        mydb.commit()
+    mydb.close()
+        
 #@bot.tree.command()
 #@app_commands.describe(
 #    first_value='The first value you want to add something to',
@@ -189,8 +202,58 @@ async def update_db(interaction: discord.Interaction, member: discord.Member):
 
 #################################
 
+#New Op Posting without Database
+@bot.tree.command()
+@app_commands.checks.has_any_role( int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
+@app_commands.describe(date="Date of Op in format 'Month DD, YYYY'",op1_name="Name of first Op",op1_desc="Description of first Op",op2_name="Name of second OP", op2_desc="Description of second Op", is_offweek="Any String other than nothing will make this an off-week")
+async def new_op_no_db(interaction: discord.Interaction, date: str, op1_name: str, op1_desc: str, op2_name: Optional[str] = "", op2_desc: Optional[str] = "", is_offweek: Optional[str] = ""):
+    """Posts for weekly Op Event"""
+    
+    isOffWeek = bool(is_offweek) or False 
+    
+    mydb = mydbConnect()
+    dateSTR = date
+    isOffWeekDB = 0
+    if isOffWeek:
+        dateSTR = date + " (Off-Week)"
+        isOffWeekDB = 1
+    announcementChannel = interaction.guild.get_channel(int(config['Discord']['ghgAnnouncementChannelID']))
+    
+    embed=discord.Embed(title="Op Day {} @ 9pm EST / 6pm PST".format(dateSTR), color=0xffffff)
+    embed.set_thumbnail(url="https://ghg.suznetworks.com/icon.png")
+    embed.add_field(name="IP: suznetworks.com Port: 2302", value="Please connect to the training server at least 10 minutes to start time to verify you can connect properly.", inline=False)
+    
+    mycursor = mydb.cursor()
+            
+    embed.add_field(name="OP 1: {}".format(op1_name), value="{}".format(op1_desc), inline=True)
+    
+    if op2_name != "":
+        embed.add_field(name="OP 2: {}".format(op1_name), value="{}".format(op2_desc), inline=True)
+    
+    embed.add_field(name="Website", value="[https://ghg.suznetworks.com](https://ghg.suznetworks.com) for help connecting.", inline=False)
+    embed.add_field(name="Reactions", value="As usual, please use :white_check_mark: if you are able to attend, and :x: if you are not!", inline=False)
+    embed.set_footer(text="If there are issues with this bot or the server please contact @BSuzinator")
+    
+    
+    await announcementChannel.send('@everyone It\'s that time again!')
+    message = await announcementChannel.send(embed=embed)
+    await message.add_reaction('✅')
+    await message.add_reaction('❌')
+    await message.publish()
+    
+    #Add entry to op table
+    dateDBObj = parse(date)
+    dateDB = dateDBObj.strftime("%Y-%m-%d")
+    
+    addOpSQL = "INSERT INTO `ghg_a3`.`ops`(`announcementMessageID`,`opDate`,`isOffWeek`,`mission1Title`, `mission1Description`,`mission2Title`, `mission2Description`)VALUES('{}','{}','{}','{}','{}','{}','{}');".format(message.id,dateDB,isOffWeekDB,op1_name,op1_desc,op2_name,op2_desc)
+    mycursor.execute(addOpSQL)
+    mydb.commit()
+    await interaction.response.send_message("Op Posted for {}".format(dateSTR))
+
+
 #New Op Posting
 @bot.tree.command()
+@app_commands.checks.has_any_role( int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
 @app_commands.describe(date="Date of Op in format 'Month DD, YYYY'",op1_id="Database ID of first Op",op2_id="Database ID of second OP", is_offweek="Any String other than nothing will make this an off-week")
 async def new_op(interaction: discord.Interaction, date: str, op1_id: int, op2_id: int, is_offweek: Optional[str] = ""):
     """Posts for weekly Op Event"""
@@ -203,7 +266,7 @@ async def new_op(interaction: discord.Interaction, date: str, op1_id: int, op2_i
     if isOffWeek:
         dateSTR = date + " (Off-Week)"
         isOffWeekDB = 1
-    announcementChannel = interaction.guild.get_channel(446974471736262656)
+    announcementChannel = interaction.guild.get_channel(int(config['Discord']['ghgAnnouncementChannelID']))
     
     embed=discord.Embed(title="Op Day {} @ 9pm EST / 6pm PST".format(dateSTR), color=0xffffff)
     embed.set_thumbnail(url="https://ghg.suznetworks.com/icon.png")
@@ -273,9 +336,8 @@ async def new_op(interaction: discord.Interaction, date: str, op1_id: int, op2_i
     addOpSQL = "INSERT INTO `ghg_a3`.`ops`(`announcementMessageID`,`opDate`,`isOffWeek`,`mission1Title`, `mission1Description`,`mission2Title`, `mission2Description`)VALUES('{}','{}','{}','{}','{}','{}','{}');".format(message.id,dateDB,isOffWeekDB,op1_idName[0],op1_idDescription[0],op2_idName[0],op2_idDescription[0])
     mycursor.execute(addOpSQL)
     mydb.commit()
-
-
-
+    
+    await interaction.response.send_message("Op Posted for {}".format(dateSTR))
 
 
 
@@ -342,7 +404,7 @@ async def server_status(interaction: discord.Interaction):
             embed.add_field(name="Server Error", value="Unknown Server online and not reporting correctly to steam\n{}".format(e), inline=False)
             print('---------------------')
     if embed.fields == []:
-        embed.add_field(name="No servers found", value="Summoning <@!144905725133586432>!")
+        embed.add_field(name="No servers found", value="Summoning <@!728552205283754065>!")
     embed.set_footer(text="If there are issues with this bot or the server please contact @BSuzinator")
     #await interaction.channel.send(embed=embed)
     # The format_dt function formats the date time into a human readable representation in the official client
@@ -353,7 +415,7 @@ async def server_status(interaction: discord.Interaction):
 
 #Restart Server
 @bot.tree.command()
-@app_commands.checks.has_any_role("Officer","Junior Officer", "Head Admin")
+@app_commands.checks.has_any_role( int(config['Discord']['ghgAdminRoleID']), int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
 @app_commands.describe(restart_type='Preset the server will restart to. Escapes, Main, Training. Defaults to Training')
 async def restart_server(interaction: discord.Interaction, restart_type: Optional[str] = "Training"):
     """Restarts Server to specified preset."""
@@ -364,7 +426,7 @@ async def restart_server(interaction: discord.Interaction, restart_type: Optiona
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
     
-    serverControlLogChannel = interaction.guild.get_channel(891142089449029683)
+    serverControlLogChannel = interaction.guild.get_channel(int(config['Discord']['ghgLogChannelID']))
     
     #await interaction.channel.send('Restarting server. Please allow 5 minutes for the process to complete. Errors will not be shown here. Contact <@144905725133586432>')
     
@@ -395,12 +457,12 @@ async def restart_server(interaction: discord.Interaction, restart_type: Optiona
 
 #Update Server
 @bot.tree.command()
-@app_commands.checks.has_any_role("Officer","Junior Officer", "Head Admin")
+@app_commands.checks.has_any_role( int(config['Discord']['ghgAdminRoleID']), int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
 async def update_server(interaction: discord.Interaction):
     """Updates Server and restarts to Training Preset."""
     
-    serverControlLogChannel = interaction.guild.get_channel(891142089449029683)
-    await interaction.response.send_message('Updating Server. Please allow 10 minutes for the process to complete. Errors will not be shown here. Contact <@144905725133586432>')
+    serverControlLogChannel = interaction.guild.get_channel(int(config['Discord']['ghgLogChannelID']))
+    await interaction.response.send_message('Updating Server. Please allow 10 minutes for the process to complete. Errors will not be shown here.')
     asyncio.ensure_future(update(interaction))
     
     
