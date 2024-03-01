@@ -88,18 +88,24 @@ def rconConnect():
 async def update(interaction):
     subprocess.run("taskkill /f /im arma3server_x64.exe")
     keyPath = "S:\GHG_A3\A3Files\A3Keys.bat"
-    modPath = "S:\GHG_A3\A3Files\A3ModsUpdate.bat"
+    # mod1Path = "S:\GHG_A3\A3Files\A3ModsUpdate_01.bat"
+    # mod2Path = "S:\GHG_A3\A3Files\A3ModsUpdate_02.bat"
+    modPath = "S:\GHG_A3\A3Files\A3Files\A3ModsUpdate_SteamCMD.bat"
     mainPath = "S:\GHG_A3\A3Files\A3Update.bat"
+    # mod1Success = subprocess.call(mod1Path, shell=True)
+    # mod2Success = subprocess.call(mod2Path, shell=True)
     modSuccess = subprocess.call(modPath, shell=True)
     mainSuccess = subprocess.call(mainPath, shell=True)
     subprocess.run("taskkill /f /im arma3server_x64.exe")
     if (os.path.isdir("S:\GHG_A3\A3Master\mpmissions")):
         subprocess.run(["rmdir", "S:\GHG_A3\A3Master\mpmissions"], shell=True)
     subprocess.run("mklink /j S:\GHG_A3\A3Master\mpmissions S:\GHG_A3\A3Missions\Training", shell=True)
-    waitUntil(modSuccess + mainSuccess == 0, subprocess.call(keyPath, shell=True),os.startfile (r"E:\Desktop\GHG_Training.lnk"))
+    #waitUntil(modSuccess + mainSuccess == 0, subprocess.call(keyPath, shell=True),os.startfile (r"E:\Desktop\GHG_Training.lnk"))
+    subprocess.call(keyPath, shell=True)
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
     serverControlLogChannel = interaction.guild.get_channel(int(config['Discord']['ghgLogChannelID']))
+    os.startfile (r"E:\Desktop\GHG_Training.lnk")
     await serverControlLogChannel.send("Server Updated and restarted to Training Configuration by {} at {}".format(interaction.user,dt_string))
     #a3UpdateIP = False
 
@@ -110,7 +116,7 @@ def waitUntil(condition, output, output2):
             output
             output2
             wU = False
-        time.sleep(5)
+        #time.sleep(5)
 
 async def fnc_updateDatabaseRoles(interaction,member=None,isAll="no"):
     guild = interaction.guild
@@ -132,6 +138,8 @@ async def fnc_updateDatabaseRoles(interaction,member=None,isAll="no"):
     officerRole = get(guild.roles, id=officerRole_ID)
     headAdminRole_ID = 176412413736779777
     headAdminRole = get(guild.roles, id=headAdminRole_ID)
+    veteranRole_ID = 1210782630816120893
+    veteranRole = get(guild.roles, id=veteranRole_ID)
     unregisteredList = "Unregistered Users: \n"
     noTeamspeakIDList = "No Teamspeak ID Users: \n"
     allMembers = []
@@ -216,6 +224,14 @@ async def fnc_updateDatabaseRoles(interaction,member=None,isAll="no"):
                 degenerateUpdate = 'UPDATE users SET isDegenerate = "0" WHERE discordID = {}'.format(member.id)
                 mycursor.execute(degenerateUpdate)
                 mydb.commit()
+            if veteranRole in member.roles:
+                veteranUpdate = 'UPDATE users SET isVeteran = "1" WHERE discordID = {}'.format(member.id)
+                mycursor.execute(veteranUpdate)
+                mydb.commit()
+            else:
+                veteranUpdate = 'UPDATE users SET isVeteran = "0" WHERE discordID = {}'.format(member.id)
+                mycursor.execute(veteranUpdate)
+                mydb.commit()
             tsInfoMsg = fnc_updateTSDB(interaction,member,mydb)
             if isAll == "yes":
                 noTeamspeakIDList = noTeamspeakIDList + tsInfoMsg            
@@ -249,7 +265,7 @@ async def fnc_updateDatabaseRoles(interaction,member=None,isAll="no"):
 
 def fnc_updateTSDB(interaction,member,mydb):
     mycursor = mydb.cursor()
-    getRolesSQL = "Select teamspeakUID,isAdmin,isOfficer,isJuniorOfficer,isZeus,isActive,isDegenerate,discordName FROM users WHERE discordID = {}".format(member.id)
+    getRolesSQL = "Select teamspeakUID,isAdmin,isOfficer,isJuniorOfficer,isZeus,isActive,isDegenerate,discordName,isVeteran FROM users WHERE discordID = {}".format(member.id)
     mycursor.execute(getRolesSQL)
     userRoles = mycursor.fetchone()
     teamspeakUID = userRoles[0]
@@ -260,6 +276,7 @@ def fnc_updateTSDB(interaction,member,mydb):
     isActive = userRoles[5]
     isDegenerate = userRoles[6]
     discordName = userRoles[7]
+    isVeteran = userRoles[8]
     message = "Unable to connect to teamspeak server."
     tsErrorMsg = ""
     with ts3.query.TS3Connection("localhost") as ts3conn:
@@ -340,6 +357,18 @@ def fnc_updateTSDB(interaction,member,mydb):
                     print("{} removed from Degenerate in Teamspeak".format(member.name))
                 except Exception as e:
                     print("{} reamains not a(n) Degenerate in Teamspeak".format(member.name))
+            if isVeteran:
+                try:
+                    ts3conn.servergroupaddclient(sgid=33, cldbid=tsClientID)
+                    print("{} added to Veteran in Teamspeak".format(member.name))
+                except Exception as e:
+                    print("{} already a(n) Veteran in Teamspeak".format(member.name))
+            else:
+                try:
+                    ts3conn.servergroupdelclient(sgid=33, cldbid=tsClientID)
+                    print("{} removed from Veteran in Teamspeak".format(member.name))
+                except Exception as e:
+                    print("{} reamains not a(n) Veteran in Teamspeak".format(member.name))
             #clientGroups = ts3conn.servergroupsbyclientid(cldbid=tsClientID)
             #groupList = "Teamspeak Server Groups for {}:".format(ctx.author.name)
             #for groupDict in clientGroups:

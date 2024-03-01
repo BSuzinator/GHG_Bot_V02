@@ -5,11 +5,11 @@ from dateutil.relativedelta import *
 from dateutil.easter import *
 from dateutil.rrule import *
 from dateutil.parser import *
-from datetime import *
+import datetime
 import discord
 from discord import *
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ext.commands import CommandNotFound
 from discord.utils import get
 import esix
@@ -22,9 +22,11 @@ import logging.handlers
 import mysql.connector
 import os
 import pendulum
+import pytz
 import random
 import requests
 import schedule
+import socket
 import steam
 from steam import game_servers as gs
 import subprocess
@@ -34,6 +36,10 @@ import traceback
 import ts3
 from typing import Optional
 
+
+#Time declarations for scheduled tasks
+#utc = datetime.timezone.utc
+#updateTime = datetime.time.fromisoformat('04:00:00')
 
 #Read Config for connection info
 config = configparser.ConfigParser()
@@ -60,6 +66,10 @@ class MyClient(discord.ext.commands.Bot):
         # This copies the global commands over to your guild.
         self.tree.copy_global_to(guild=MY_GUILD)
         await self.tree.sync(guild=MY_GUILD)
+    
+#    @tasks.loop(time=updateTime)
+#    async def autoUpdateMods(self):
+#        print("Updating Mods at {}".format(updateTime))
 
 
 intents = discord.Intents.all()
@@ -102,7 +112,8 @@ async def on_member_join(member):
         mycursor.execute(sql)
         mydb.commit()
     mydb.close()
-        
+
+
 #@bot.tree.command()
 #@app_commands.describe(
 #    first_value='The first value you want to add something to',
@@ -178,6 +189,28 @@ async def show_join_date(interaction: discord.Interaction, member: discord.Membe
 
 #################################
 
+#Test Command
+@bot.tree.command()
+@app_commands.checks.has_any_role( int(config['Discord']['ghgAdminRoleID']), int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
+async def test_command(interaction: discord.Interaction):
+    """Test command for development. Not to be relied on for anything specific"""
+    embed=discord.Embed(title="Test Message", color=0xffffff)
+    embed.add_field(name="Leadership Pre-Slot", value="Please use <:ghg_cpt:1062210604355563540> if you would like to take a PLT level leadership, or <:ghg_lt:1062210603437006928> if you would like to take a Squad level leadership position in either of the ops.", inline=False)
+    embed.set_footer(text="If there are issues with this bot or the server please fuck off")
+    message = await interaction.response.send_message(embed=embed)
+    message = await interaction.original_response()
+    await message.add_reaction('<:ghg_cpt:1062210604355563540>')
+    await message.add_reaction('<:ghg_lt:1062210603437006928>')
+
+
+
+
+
+
+
+
+
+
 
 #################################
 #Database
@@ -193,7 +226,89 @@ async def show_join_date(interaction: discord.Interaction, member: discord.Membe
 async def update_db(interaction: discord.Interaction, member: discord.Member):
     await fnc_updateDatabaseRoles(interaction,member)    
     await interaction.response.send_message(f'{member} has been updated.')
-    
+
+
+#Get Discord ID
+@bot.tree.context_menu(name='Discord ID')
+async def discord_id(interaction: discord.Interaction, member: discord.Member):
+    await interaction.response.send_message(f'{member.name}\'s Discord ID is `{member.id}`')    
+
+
+@bot.tree.command()
+@app_commands.checks.has_any_role( int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
+async def active_check(interaction: discord.Interaction):
+    if "officer" in [y.name.lower() for y in interaction.user.roles]:
+        guild = interaction.guild
+        channelID = 446974471736262656
+        channel = interaction.guild.get_channel(channelID)
+        mydb = mydbConnect()
+        mycursor = mydb.cursor()
+        recentOpsSQL = "SELECT * FROM ops order by ops.opDate DESC;"
+        mycursor.execute(recentOpsSQL)
+        recentOpsData = mycursor.fetchall()
+        recentOp1 = recentOpsData[0]
+        recentOp2 = recentOpsData[1]
+        recentOp3 = recentOpsData[2]
+        message_1 = await channel.fetch_message(recentOp1[0])
+        message_2 = await channel.fetch_message(recentOp2[0])
+        message_3 = await channel.fetch_message(recentOp3[0])
+        activeRole_id = 446959255262855168
+        activeRole = get(guild.roles, id=activeRole_id)
+        loaRole_ID = 891142215848570891
+        loaRole = get(guild.roles, id=loaRole_ID)
+
+        allMessages = [message_1, message_2, message_3]
+        
+        currentActive = activeRole.members
+        currentLoA = loaRole.members
+        
+        for member in currentLoA:
+            currentActive.remove(member)
+
+        allAttended = []
+        allAbsent = []
+        removedMembers = []
+        removedMembersNames = []
+
+        for message in allMessages:
+            reactions = message.reactions
+
+            for reaction in reactions:
+                if (reaction.emoji == "✅"):
+                    attendUsers = [user async for user in reaction.users()]
+                    allAttended.extend(attendUsers)
+                elif (reaction.emoji == "❌"):
+                    absentUsers = [user async for user in reaction.users()]
+                    allAbsent.extend(absentUsers)
+                
+        for member in currentActive:
+            if ((member not in allAttended) and (member not in allAbsent)):
+                await member.remove_roles(activeRole, reason="No signup for last three ops")
+                removedMembers.append(member)
+        
+        now = datetime.now()
+        dt_string = now.strftime("%Y-%m-%d")
+        removedLog = "{} Removed Players: {}\n".format(dt_string,len(removedMembers))
+        dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
+        file = open("activeLogs/{}_removedLog.txt".format(dt_string), "a+", encoding="utf-8")
+        file.write("Removed Players: {}\n".format(len(removedMembers)))
+        
+        for member in removedMembers:
+            removedLog += "\n{}".format(member.name)
+            file.write(member.name)
+            file.write("\n")
+
+        activeCheckChannel = interaction.guild.get_channel(891141579895607336)
+        await activeCheckChannel.send("Activity Check run by {} at {}\n{}".format(interaction.user.name,dt_string,removedLog))
+        #await activeCheckChannel.send(removedLog)
+        file.close
+        
+    elif not "officer" in [y.name.lower() for y in ctx.author.roles]:
+        await interaction.response.send_message('You need to be an Officer to notify active members.')
+
+
+
+
 
 
 #################################
@@ -201,6 +316,114 @@ async def update_db(interaction: discord.Interaction, member: discord.Member):
 
 
 #################################
+
+#Post Op
+#Posts op that already exists in database
+@bot.tree.command()
+@app_commands.checks.has_any_role( int(config['Discord']['ghgOfficerRoleID']), int(config['Discord']['ghgJuniorOfficerRoleID']))
+@app_commands.describe(date="Date of Op in format 'Month DD, YYYY'")
+async def post_op(interaction: discord.Interaction, date: str):
+    """Posts for weekly Op Event"""
+    
+    mydb = mydbConnect()
+    mycursor = mydb.cursor()
+    dateSTR = date
+    dateDBObj = parse(date)
+    dateDB = dateDBObj.strftime("%Y-%m-%d")
+    offWeekSQL = "Select isOffWeek FROM ops WHERE opDate = '{}'".format(dateDB)
+    mycursor.execute(offWeekSQL)
+    isOffWeek = mycursor.fetchone()
+    print(isOffWeek)
+    if isOffWeek:
+        dateSTR = date + " (Off-Week)"
+        isOffWeekDB = 1
+    announcementChannel = interaction.guild.get_channel(int(config['Discord']['ghgAnnouncementChannelID']))
+    
+    print("{},{},{}".format(date,dateDBObj,dateDB))
+    
+    embed=discord.Embed(title="Op Day {} @ 9pm EST / 6pm PST".format(dateSTR), color=0xffffff)
+    embed.set_thumbnail(url="https://ghg.suznetworks.com/icon.png")
+    embed.add_field(name="IP: suznetworks.com Port: 2302", value="Please connect to the training server at least 10 minutes to start time to verify you can connect properly.", inline=False)
+    
+    op1_idSQL = "Select mission1OpID FROM ops WHERE opDate = '{}'".format(dateDB)
+    op2_idSQL = "Select mission2OpID FROM ops WHERE opDate = '{}'".format(dateDB)
+    mycursor.execute(op1_idSQL)
+    op1_idT = mycursor.fetchone()
+    mycursor.execute(op2_idSQL)
+    op2_idT = mycursor.fetchone()
+    op1_id = op1_idT[0]
+    op2_id = op2_idT[0]
+    print(op1_id)
+    print(op2_id)
+    
+    op1_idNameSQL = "Select mission1Title FROM ops WHERE opDate = '{}'".format(dateDB)
+    op1_idDescriptionSQL = "Select mission1Description FROM ops WHERE opDate = '{}'".format(dateDB)
+    mycursor.execute(op1_idNameSQL)
+    op1_idName = mycursor.fetchone()
+    mycursor.execute(op1_idDescriptionSQL)
+    op1_idDescription = mycursor.fetchone()
+
+    op2_idNameSQL = "Select mission2Title FROM ops WHERE opDate = '{}'".format(dateDB)
+    op2_idDescriptionSQL = "Select mission2Description FROM ops WHERE opDate = '{}'".format(dateDB)
+    mycursor.execute(op2_idNameSQL)
+    op2_idName = mycursor.fetchone()
+    mycursor.execute(op2_idDescriptionSQL)
+    op2_idDescription = mycursor.fetchone()
+        
+    embed.add_field(name="OP 1: {}".format(op1_idName[0]), value="{}".format(op1_idDescription[0]), inline=True)
+    embed.add_field(name="OP 2: {}".format(op2_idName[0]), value="{}".format(op2_idDescription[0]), inline=True)
+    embed.add_field(name="Website", value="[https://ghg.suznetworks.com](https://ghg.suznetworks.com) for help connecting.", inline=False)
+    embed.add_field(name="Reactions", value="As usual, please use :white_check_mark: if you are able to attend, and :x: if you are not!", inline=False)
+    embed.add_field(name="Leadership Pre-Slot", value="Please use <:ghg_cpt:1062210604355563540> if you would like to take a PLT level leadership, or <:ghg_lt:1062210603437006928> if you would like to take a Squad level leadership position in either of the ops.", inline=False)
+    embed.set_footer(text="If there are issues with this bot or the server please contact @BSuzinator")
+    
+    
+    await announcementChannel.send('@everyone It\'s that time again!')
+    message = await announcementChannel.send(embed=embed)
+    await message.add_reaction('✅')
+    await message.add_reaction('❌')
+    await message.add_reaction('<:ghg_cpt:1062210604355563540>')
+    await message.add_reaction('<:ghg_lt:1062210603437006928>')
+    await message.publish()
+    
+    op1_idUpdateDate = 'UPDATE missions SET missionLastRunDate = "{}" WHERE missionID = {}'.format(date,op1_id)
+    op2_idUpdateDate = 'UPDATE missions SET missionLastRunDate = "{}" WHERE missionID = {}'.format(date,op2_id)
+    mycursor.execute(op1_idUpdateDate)
+    mydb.commit()
+    mycursor.execute(op2_idUpdateDate)
+    mydb.commit()
+
+    op1_idTotalRunsSQL = 'Select missionTotalRuns FROM missions WHERE missionID = {}'.format(op1_id)
+    mycursor.execute(op1_idTotalRunsSQL)
+    op1_idTotalRuns = mycursor.fetchone()
+
+    op2_idTotalRunsSQL = 'Select missionTotalRuns FROM missions WHERE missionID = {}'.format(op2_id)
+    mycursor.execute(op2_idTotalRunsSQL)
+    op2_idTotalRuns = mycursor.fetchone()
+
+    op1_idTotalRuns = int(op1_idTotalRuns[0])
+    op2_idTotalRuns = int(op2_idTotalRuns[0])
+    
+    op1_idTotalRuns = op1_idTotalRuns + 1
+    op2_idTotalRuns = op2_idTotalRuns + 1
+    
+    op1_idTotalRunsSQL = "UPDATE missions SET missionTotalRuns = {} WHERE missionID = {}".format(op1_idTotalRuns,op1_id)
+    op2_idTotalRunsSQL = "UPDATE missions SET missionTotalRuns = {} WHERE missionID = {}".format(op2_idTotalRuns,op2_id)
+    
+    mycursor.execute(op1_idTotalRunsSQL)
+    mydb.commit()
+    mycursor.execute(op2_idTotalRunsSQL)
+    mydb.commit()
+    
+    
+    addOpSQL = "UPDATE ops SET announcementMessageID = {} WHERE opDate = '{}'".format(message.id,dateDB)
+    print(addOpSQL)
+    mycursor.execute(addOpSQL)
+    mydb.commit()
+    
+    await interaction.response.send_message("Op Posted for {}".format(dateSTR))
+
+
 
 #New Op Posting without Database
 @bot.tree.command()
@@ -232,6 +455,7 @@ async def new_op_no_db(interaction: discord.Interaction, date: str, op1_name: st
     
     embed.add_field(name="Website", value="[https://ghg.suznetworks.com](https://ghg.suznetworks.com) for help connecting.", inline=False)
     embed.add_field(name="Reactions", value="As usual, please use :white_check_mark: if you are able to attend, and :x: if you are not!", inline=False)
+    embed.add_field(name="Leadership Pre-Slot", value="Please use <:ghg_cpt:1062210604355563540> if you would like to take a PLT level leadership, or <:ghg_lt:1062210603437006928> if you would like to take a Squad level leadership position in either of the ops.", inline=False)
     embed.set_footer(text="If there are issues with this bot or the server please contact @BSuzinator")
     
     
@@ -239,6 +463,8 @@ async def new_op_no_db(interaction: discord.Interaction, date: str, op1_name: st
     message = await announcementChannel.send(embed=embed)
     await message.add_reaction('✅')
     await message.add_reaction('❌')
+    await message.add_reaction('<:ghg_cpt:1062210604355563540>')
+    await message.add_reaction('<:ghg_lt:1062210603437006928>')
     await message.publish()
     
     #Add entry to op table
@@ -291,6 +517,7 @@ async def new_op(interaction: discord.Interaction, date: str, op1_id: int, op2_i
     embed.add_field(name="OP 2: {}".format(op2_idName[0]), value="{}".format(op2_idDescription[0]), inline=True)
     embed.add_field(name="Website", value="[https://ghg.suznetworks.com](https://ghg.suznetworks.com) for help connecting.", inline=False)
     embed.add_field(name="Reactions", value="As usual, please use :white_check_mark: if you are able to attend, and :x: if you are not!", inline=False)
+    embed.add_field(name="Leadership Pre-Slot", value="Please use <:ghg_cpt:1062210604355563540> if you would like to take a PLT level leadership, or <:ghg_lt:1062210603437006928> if you would like to take a Squad level leadership position in either of the ops.", inline=False)
     embed.set_footer(text="If there are issues with this bot or the server please contact @BSuzinator")
     
     
@@ -298,6 +525,8 @@ async def new_op(interaction: discord.Interaction, date: str, op1_id: int, op2_i
     message = await announcementChannel.send(embed=embed)
     await message.add_reaction('✅')
     await message.add_reaction('❌')
+    await message.add_reaction('<:ghg_cpt:1062210604355563540>')
+    await message.add_reaction('<:ghg_lt:1062210603437006928>')
     await message.publish()
     
     op1_idUpdateDate = 'UPDATE missions SET missionLastRunDate = "{}" WHERE missionID = {}'.format(date,op1_id)
@@ -333,7 +562,7 @@ async def new_op(interaction: discord.Interaction, date: str, op1_id: int, op2_i
     dateDBObj = parse(date)
     dateDB = dateDBObj.strftime("%Y-%m-%d")
     
-    addOpSQL = "INSERT INTO `ghg_a3`.`ops`(`announcementMessageID`,`opDate`,`isOffWeek`,`mission1Title`, `mission1Description`,`mission2Title`, `mission2Description`)VALUES('{}','{}','{}','{}','{}','{}','{}');".format(message.id,dateDB,isOffWeekDB,op1_idName[0],op1_idDescription[0],op2_idName[0],op2_idDescription[0])
+    addOpSQL = "INSERT INTO `ghg_a3`.`ops`(`announcementMessageID`,`opDate`,`isOffWeek`, `mission1OpID`, `mission1Title`, `mission1Description`, `mission2OpID`, `mission2Title`, `mission2Description`)VALUES('{}','{}','{}','{}','{}','{}','{}','{}','{}');".format(message.id,dateDB,isOffWeekDB,op1_id,op1_idName[0],op1_idDescription[0],op2_id,op2_idName[0],op2_idDescription[0])
     mycursor.execute(addOpSQL)
     mydb.commit()
     
@@ -366,7 +595,7 @@ async def upload_op(interaction: discord.Interaction, op_file: discord.Attachmen
     if ((filename[0:9] == 'GHG_COOP_' or filename[0:8] == 'GHG_PVP_')) and (filename[-4:] == '.pbo'):
         filePath += filename
         await opAttachment.save(filePath)
-        await interaction.response.send_message('Op uploaded successfully. If you do not see it, please restart the server and retry.')
+        await interaction.response.send_message('Op ({}) uploaded successfully. If you do not see it, please restart the server and retry.'.format(opAttachment.filename))
         print(filePath)
         return
     else:
@@ -387,7 +616,7 @@ async def server_status(interaction: discord.Interaction):
     embed=discord.Embed(title="GHG Server Status", type="rich", color=0xffffff)
     embed.set_thumbnail(url="https://ghg.suznetworks.com/icon.png")
     print('Checking Server Status...')
-    for server_addr in gs.query_master(r'gameaddr\98.157.250.120'):
+    for server_addr in gs.query_master(r'gameaddr\{}'.format(socket.gethostbyname('suznetworks.com'))):
         try: 
             print('---------------------')
             print(gs.a2s_info(server_addr))

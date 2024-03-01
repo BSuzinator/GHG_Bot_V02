@@ -1,45 +1,19 @@
-from aiohttp import ClientSession
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# This example requires the 'message_content' privileged intent to function, however your own bot might not.
+
+# This example covers advanced startup options and uses some real world examples for why you may need them.
+
 import asyncio
-import asyncpg
-import bec_rcon
-import configparser
-from dateutil.relativedelta import *
-from dateutil.easter import *
-from dateutil.rrule import *
-from dateutil.parser import *
-from datetime import *
-import discord
-from discord import *
-from discord import app_commands
-from discord.ext import commands
-from discord.ext.commands import CommandNotFound
-from discord.utils import get
-import esix
-from ghg_functions import *
-#from ghg_automatedTasks import *
-from github import Github
-import json
 import logging
 import logging.handlers
-import mysql.connector
 import os
-import pendulum
-import random
-import requests
-import schedule
-import subprocess
-import threading
-import time
-import traceback
-import ts3
+
 from typing import List, Optional
 
-#Read Config for connection info
-config = configparser.ConfigParser()
-config.read('connectionInfo.ini')
+import asyncpg  # asyncpg is not a dependency of the discord.py, and is only included here for illustrative purposes.
+import discord
+from discord.ext import commands
+from aiohttp import ClientSession
 
-#MY_GUILD = discord.Object(id=int(config['Discord']['ghgGuildID']))  # replace with your guild id
 
 class CustomBot(commands.Bot):
     def __init__(
@@ -96,7 +70,7 @@ async def main():
         filename='discord.log',
         encoding='utf-8',
         maxBytes=32 * 1024 * 1024,  # 32 MiB
-        backupCount=10,  # Rotate through 5 files
+        backupCount=5,  # Rotate through 5 files
     )
     dt_fmt = '%Y-%m-%d %H:%M:%S'
     formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
@@ -115,9 +89,16 @@ async def main():
     async with ClientSession() as our_client, asyncpg.create_pool(user='postgres', command_timeout=30) as pool:
         # 2. We become responsible for starting the bot.
 
-        exts = ['','']
-        async with CustomBot(commands.when_mentioned, db_pool=pool, web_client=our_client, testing_guild_id=417512514771746817, initial_extensions=exts) as bot:
-
+        exts = ['general', 'mod', 'dice']
+        intents = discord.Intents.default()
+        intents.message_content = True
+        async with CustomBot(
+            commands.when_mentioned,
+            db_pool=pool,
+            web_client=our_client,
+            initial_extensions=exts,
+            intents=intents,
+        ) as bot:
             await bot.start(os.getenv(config['Discord']['botToken'], ''))
 
 
